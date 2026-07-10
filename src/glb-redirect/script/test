@@ -77,7 +77,7 @@ compile_check() {
   restore_headers() {
     [ -f "$backup_dir/kasan-checks.h" ] && cp -p "$backup_dir/kasan-checks.h" "$kasan"
     [ -f "$backup_dir/kcsan-checks.h" ] && cp -p "$backup_dir/kcsan-checks.h" "$kcsan"
-    rm -rf "$backup_dir"
+    [ -n "${backup_dir:-}" ] && rm -rf -- "$backup_dir"
   }
   trap 'restore_headers' EXIT
 
