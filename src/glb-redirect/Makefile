@@ -16,14 +16,21 @@ obj-m += ipt_GLBREDIRECT.o
 # the prototype), so its presence distinguishes the two forms.
 COOKIE_TCP_H := $(firstword $(wildcard $(srctree)/include/net/tcp.h $(srctree)/source/include/net/tcp.h))
 ifneq ($(COOKIE_TCP_H),)
-# Capture the probe result in a plain variable first: embedding the awk command
-# (which contains commas and parentheses) directly inside ifeq(...) would break
-# make's conditional parser.
-COOKIE_U32_COUNT := $(shell awk '/__cookie_v4_check/{f=1} f{b=b $$0} f&&/;/{print b; exit}' $(COOKIE_TCP_H) | grep -c 'u32')
-ifeq ($(COOKIE_U32_COUNT),0)
+# Capture the __cookie_v4_check() declaration (it may span two lines). We only
+# emit a define when the declaration is actually found; if a future header
+# layout change hides it, COOKIE_DECL stays empty, no define is emitted, and the
+# C code falls back to its LINUX_VERSION_CODE heuristic. The 3-arg form carries
+# a trailing 'u32 cookie' parameter (the only u32 in the prototype), which
+# distinguishes the two forms. NB: keep the awk free of parentheses and commas
+# -- embedding either inside $(shell ...) breaks make's function/conditional
+# parser.
+COOKIE_DECL := $(shell awk '/__cookie_v4_check/{f=1} f{b=b $$0} f&&/;/{print b; exit}' $(COOKIE_TCP_H))
+ifneq ($(COOKIE_DECL),)
+ifeq ($(findstring u32,$(COOKIE_DECL)),)
 ccflags-y += -DGLB_COOKIE_CHECK_NO_COOKIE_ARG
 else
 ccflags-y += -DGLB_COOKIE_CHECK_HAS_COOKIE_ARG
+endif
 endif
 endif
 
