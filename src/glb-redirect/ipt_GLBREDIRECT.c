@@ -116,15 +116,17 @@ struct glbgue_stats {
 /*
  * The socket-lookup helpers inet_lookup_established(), inet_lookup_listener(),
  * __inet6_lookup_established() and inet6_lookup_listener() lost their
- * 'struct inet_hashinfo *hashinfo' argument upstream: the global tcp_hashinfo
- * is now reached internally via the net namespace, so callers no longer pass
- * &tcp_hashinfo. As with the cookie-check change above, distributions may
- * backport this independently of the mainline version, so the Makefile probes
- * the kernel headers for the actual arity and defines one of the macros below;
- * if it could not probe the header, we fall back to a version boundary.
+ * 'struct inet_hashinfo *hashinfo' argument upstream in Linux 6.18 (commit
+ * cb16f4b6c73d, "tcp: Don't pass hashinfo to socket lookup helpers"): the
+ * global tcp_hashinfo is now reached internally via the net namespace, so
+ * callers no longer pass &tcp_hashinfo. v6.17 still carries the argument. As
+ * with the cookie-check change above, distributions may backport this
+ * independently of the mainline version, so the Makefile probes the kernel
+ * headers for the actual arity and defines one of the macros below; if it
+ * could not probe the header, we fall back to the mainline version boundary.
  */
 #if !defined(GLB_INET_LOOKUP_HAS_HASHINFO_ARG) && !defined(GLB_INET_LOOKUP_NO_HASHINFO_ARG)
-#	if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+#	if LINUX_VERSION_CODE >= KERNEL_VERSION(6,18,0)
 #		define GLB_INET_LOOKUP_NO_HASHINFO_ARG
 #	else
 #		define GLB_INET_LOOKUP_HAS_HASHINFO_ARG
