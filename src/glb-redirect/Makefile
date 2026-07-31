@@ -73,7 +73,7 @@ lib: libxt_GLBREDIRECT.so
 # Test/debug helper: echo the socket-lookup arity flag that the header probe
 # above resolved (empty if it could not classify, in which case the C code
 # falls back to a LINUX_VERSION_CODE heuristic). Exercised by
-# tests/test_lookup_arg_detection.sh against fixture headers, so both detection
+# script/test against fixture headers, so both detection
 # branches are validated without needing a full kernel build. Point it at a
 # fixture tree with `make srctree=<dir> print-lookup-arg`.
 .PHONY: print-lookup-arg
