@@ -34,6 +34,29 @@ endif
 endif
 endif
 
+# Probe the kernel headers for the socket-lookup helper arity. Upstream removed
+# the 'struct inet_hashinfo *hashinfo' argument (callers no longer pass
+# &tcp_hashinfo), but distributions may backport that change, so a
+# LINUX_VERSION_CODE check in the C code is not reliable on its own. When we can
+# read net/inet_hashtables.h we pass a definitive answer through to the C code;
+# otherwise it falls back to a version heuristic. The old declaration carries a
+# 'struct inet_hashinfo *hashinfo' parameter -- the presence of the 'inet_hashinfo'
+# type name in the inet_lookup_established() declaration distinguishes the two
+# forms. NB: as with the cookie probe above, keep the awk free of parentheses
+# and commas -- embedding either inside $(shell ...) breaks make's
+# function/conditional parser, so we terminate accumulation on the first ';'.
+HASHINFO_INET_H := $(firstword $(wildcard $(srctree)/include/net/inet_hashtables.h $(srctree)/source/include/net/inet_hashtables.h))
+ifneq ($(HASHINFO_INET_H),)
+HASHINFO_DECL := $(shell awk '/inet_lookup_established/{f=1} f{b=b $$0} f&&/;/{print b; exit}' $(HASHINFO_INET_H))
+ifneq ($(HASHINFO_DECL),)
+ifeq ($(findstring inet_hashinfo,$(HASHINFO_DECL)),)
+ccflags-y += -DGLB_INET_LOOKUP_NO_HASHINFO_ARG
+else
+ccflags-y += -DGLB_INET_LOOKUP_HAS_HASHINFO_ARG
+endif
+endif
+endif
+
 all: lib kmod
 
 kmod:
@@ -46,6 +69,16 @@ clean:
 
 .PHONY: lib
 lib: libxt_GLBREDIRECT.so
+
+# Test/debug helper: echo the socket-lookup arity flag that the header probe
+# above resolved (empty if it could not classify, in which case the C code
+# falls back to a LINUX_VERSION_CODE heuristic). Exercised by
+# tests/test_lookup_arg_detection.sh against fixture headers, so both detection
+# branches are validated without needing a full kernel build. Point it at a
+# fixture tree with `make srctree=<dir> print-lookup-arg`.
+.PHONY: print-lookup-arg
+print-lookup-arg:
+	@echo "$(filter -DGLB_INET_LOOKUP_%,$(ccflags-y))"
 
 .PHONY: install
 install: lib kmod

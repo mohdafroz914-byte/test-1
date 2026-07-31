@@ -110,6 +110,82 @@ compile_check() {
   echo "compile-check: ok (libxt_GLBREDIRECT.so + ipt_GLBREDIRECT.ko built)"
 }
 
+# ---------------------------------------------------------------------------
+# Verify the Makefile's socket-lookup arity probe classifies kernel headers
+# correctly.
+#
+# Upstream dropped the `struct inet_hashinfo *hashinfo` argument from
+# inet_lookup_established() and friends (callers no longer pass &tcp_hashinfo).
+# ipt_GLBREDIRECT.c adapts via the GLB_TCP_HASHINFO_ARG macro, whose value is
+# chosen by a header probe in the Makefile (with a LINUX_VERSION_CODE fallback
+# in the C code). compile_check() above only builds against the running kernel,
+# so it exercises just one of the two API forms; this drives the probe against
+# fixture headers for BOTH forms, so a regression in either branch is caught
+# regardless of the host kernel. It needs only `make` + `awk`, so it runs even
+# where full kernel headers / the build toolchain are unavailable.
+# ---------------------------------------------------------------------------
+lookup_arg_detection_check() {
+  local fixtures fail=0
+
+  # Write a minimal net/inet_hashtables.h containing just the
+  # inet_lookup_established declaration in the requested form.
+  #   $1 = variant name (subdir under $fixtures)
+  #   $2 = "old" (carries hashinfo arg) | "new" (hashinfo arg removed)
+  write_lookup_header() {
+    local dir="$fixtures/$1/include/net"
+    mkdir -p "$dir"
+    if [ "$2" = "old" ]; then
+      cat > "$dir/inet_hashtables.h" <<'EOF'
+struct sock *__inet_lookup_established(struct net *net,
+                                       struct inet_hashinfo *hashinfo,
+                                       const __be32 saddr, const __be16 sport,
+                                       const __be32 daddr, const u16 hnum,
+                                       const int dif, const int sdif);
+EOF
+    else
+      cat > "$dir/inet_hashtables.h" <<'EOF'
+struct sock *__inet_lookup_established(const struct net *net,
+                                       const __be32 saddr, const __be16 sport,
+                                       const __be32 daddr, const u16 hnum,
+                                       const int dif, const int sdif);
+EOF
+    fi
+  }
+
+  # Ask the real Makefile probe how it classified a given fixture tree, and
+  # assert the expected macro was selected.
+  #   $1 = variant, $2 = expected macro substring, $3 = human label
+  check_lookup() {
+    local got
+    got="$(make -s srctree="$fixtures/$1" print-lookup-arg 2>/dev/null || true)"
+    if [[ "$got" == *"$2"* ]]; then
+      echo "lookup-arg-detection: ok: $3 header => $2"
+    else
+      echo "lookup-arg-detection: FAIL: $3 header classified as [${got:-<none>}], expected $2" >&2
+      fail=1
+    fi
+  }
+
+  fixtures="$(mktemp -d)"
+  trap 'rm -rf -- "$fixtures"' EXIT
+
+  write_lookup_header old old
+  write_lookup_header new new
+
+  check_lookup old GLB_INET_LOOKUP_HAS_HASHINFO_ARG old
+  check_lookup new GLB_INET_LOOKUP_NO_HASHINFO_ARG  new
+
+  rm -rf -- "$fixtures"
+  trap - EXIT
+
+  if [ "$fail" -ne 0 ]; then
+    echo "lookup-arg-detection: FAILED" >&2
+    return 1
+  fi
+  echo "lookup-arg-detection: ok"
+}
+
 compile_check
+lookup_arg_detection_check
 
 PYTHONPATH=$(pwd)/../scapy-glb-gue/:$PYTHONPATH pytest -v tests/

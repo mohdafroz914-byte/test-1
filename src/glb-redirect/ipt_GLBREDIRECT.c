@@ -113,6 +113,33 @@ struct glbgue_stats {
 #	define GLB_COOKIE_V6_CHECK(iph, th) __cookie_v6_check((iph), (th))
 #endif
 
+/*
+ * The socket-lookup helpers inet_lookup_established(), inet_lookup_listener(),
+ * __inet6_lookup_established() and inet6_lookup_listener() lost their
+ * 'struct inet_hashinfo *hashinfo' argument upstream: the global tcp_hashinfo
+ * is now reached internally via the net namespace, so callers no longer pass
+ * &tcp_hashinfo. As with the cookie-check change above, distributions may
+ * backport this independently of the mainline version, so the Makefile probes
+ * the kernel headers for the actual arity and defines one of the macros below;
+ * if it could not probe the header, we fall back to a version boundary.
+ */
+#if !defined(GLB_INET_LOOKUP_HAS_HASHINFO_ARG) && !defined(GLB_INET_LOOKUP_NO_HASHINFO_ARG)
+#	if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+#		define GLB_INET_LOOKUP_NO_HASHINFO_ARG
+#	else
+#		define GLB_INET_LOOKUP_HAS_HASHINFO_ARG
+#	endif
+#endif
+
+#ifdef GLB_INET_LOOKUP_HAS_HASHINFO_ARG
+	/* Expands to the leading '&tcp_hashinfo,' argument (note the trailing
+	 * comma) for kernels that still expect it. */
+#	define GLB_TCP_HASHINFO_ARG &tcp_hashinfo,
+#else
+	/* The hashinfo argument was removed; expand to nothing. */
+#	define GLB_TCP_HASHINFO_ARG
+#endif
+
 struct glbgue_stats __percpu *percpu_stats;
 
 static unsigned int is_valid_locally(struct net *net, struct sk_buff *skb, int inner_ip_ofs, struct iphdr *iph_v4, struct ipv6hdr *iph_v6, struct tcphdr *th);
@@ -571,12 +598,12 @@ static unsigned int is_valid_locally(struct net *net, struct sk_buff *skb, int i
 		struct sock *nsk;
 
 		if (likely(iph_v4 != NULL)) {
-			nsk = inet_lookup_established(net, &tcp_hashinfo,
+			nsk = inet_lookup_established(net, GLB_TCP_HASHINFO_ARG
 						iph_v4->saddr, th->source,
 						iph_v4->daddr, th->dest,
 						inet_iif(skb));
 		} else if (likely(iph_v6 != NULL)) {
-			nsk = __inet6_lookup_established(net, &tcp_hashinfo,
+			nsk = __inet6_lookup_established(net, GLB_TCP_HASHINFO_ARG
 						&iph_v6->saddr, th->source,
 						&iph_v6->daddr, ntohs(th->dest),
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
@@ -607,7 +634,7 @@ static unsigned int is_valid_locally(struct net *net, struct sk_buff *skb, int i
 		if (likely(iph_v4 != NULL)) {
 			/* IPv4 */
 
-			listen_sk = inet_lookup_listener(net, &tcp_hashinfo,
+			listen_sk = inet_lookup_listener(net, GLB_TCP_HASHINFO_ARG
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
 				skb, ip_hdrlen(skb) + __tcp_hdrlen(th),
 #endif
@@ -647,7 +674,7 @@ static unsigned int is_valid_locally(struct net *net, struct sk_buff *skb, int i
 		} else if (likely(iph_v6 != NULL)) {
 			/* IPv6 */
 
-			listen_sk = inet6_lookup_listener(net, &tcp_hashinfo,
+			listen_sk = inet6_lookup_listener(net, GLB_TCP_HASHINFO_ARG
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
 				skb, ip_hdrlen(skb) + __tcp_hdrlen(th),
 #endif
